@@ -1,9 +1,11 @@
-from fastapi import FastAPI, Query, Response, HTTPException
+from fastapi import FastAPI, Query, HTTPException, Response
+from pydantic import BaseModel, Field
 from data_generator import generate_purchases
 
+from typing import Optional
+import uuid
 import math
 import time
-import uuid
 
 
 # ============================================================
@@ -12,109 +14,73 @@ import uuid
 
 app = FastAPI(
     title="Purchase Data API",
-    description="REST API for generating sample purchase data",
-    version="1.0.0"
+    description="Sample REST API for Data Engineering pipelines",
+    version="2.0.0"
 )
 
 
 # ============================================================
-# ROOT ENDPOINT
+# IN-MEMORY DATASET STORAGE
+# ============================================================
+#
+# Structure:
+#
+# DATASETS = {
+#     "dataset-id": {
+#         "metadata": {...},
+#         "data": [...]
+#     }
+# }
+#
+# NOTE:
+# This is temporary storage.
+# Restarting the application will remove all datasets.
+# Later this can be replaced with PostgreSQL.
 # ============================================================
 
-@app.get("/")
-def root():
-    return {
-        "message": "Purchase Data API is running",
-        "docs": "/docs",
-        "health": "/health",
-        "purchases": "/purchases"
-    }
-
-
-# ============================================================
-# HEALTH CHECK
-# ============================================================
-
-@app.get("/health")
-def health():
-    return {
-        "status": "healthy"
-    }
+DATASETS = {}
 
 
 # ============================================================
-# PURCHASE ENDPOINT
+# REQUEST MODEL
 # ============================================================
 
-@app.get("/purchases")
-def get_purchases(
+class DatasetRequest(BaseModel):
 
-    response: Response,
-
-    # --------------------------------------------------------
-    # DATA GENERATION PARAMETERS
-    # --------------------------------------------------------
-
-    start_date: str = Query(
-        "2025-01-01",
-        description="Start date in YYYY-MM-DD format"
-    ),
-
-    end_date: str = Query(
-        "2025-12-31",
-        description="End date in YYYY-MM-DD format"
-    ),
-
-    num_records: int = Query(
-        100,
-        ge=1,
-        le=100000,
-        description="Total number of records to generate"
-    ),
-
-    include_nulls: bool = Query(
-        False,
-        description="Whether random null values should be generated"
-    ),
-
-    null_probability: float = Query(
-        0.05,
-        ge=0,
-        le=1,
-        description="Probability of nullable fields becoming null"
-    ),
-
-
-    # --------------------------------------------------------
-    # PAGINATION PARAMETERS
-    # --------------------------------------------------------
-
-    page: int = Query(
-        1,
-        ge=1,
-        description="Page number"
-    ),
-
-    limit: int = Query(
-        100,
-        ge=1,
-        le=1000,
-        description="Number of records per page"
+    start_date: str = Field(
+        ...,
+        examples=["2025-01-01"]
     )
-):
 
-    # --------------------------------------------------------
-    # REQUEST ID
-    # --------------------------------------------------------
+    end_date: str = Field(
+        ...,
+        examples=["2025-12-31"]
+    )
+
+    num_records: int = Field(
+        default=1000,
+        ge=1,
+        le=100000
+    )
+
+    include_nulls: bool = False
+
+    null_probability: float = Field(
+        default=0.05,
+        ge=0,
+        le=1
+    )
+
+
+# ============================================================
+# COMMON RESPONSE HEADERS
+# ============================================================
+
+def add_common_headers(response: Response):
 
     request_id = str(uuid.uuid4())
 
     response.headers["X-Request-ID"] = request_id
-
-
-    # --------------------------------------------------------
-    # SAMPLE RATE LIMIT HEADERS
-    # --------------------------------------------------------
 
     response.headers["X-RateLimit-Limit"] = "100"
 
@@ -124,19 +90,70 @@ def get_purchases(
         int(time.time()) + 60
     )
 
+    return request_id
+
+
+# ============================================================
+# ROOT ENDPOINT
+# ============================================================
+
+@app.get("/")
+def root():
+
+    return {
+        "message": "Purchase Data API is running",
+        "version": "2.0.0",
+        "docs": "/docs"
+    }
+
+
+# ============================================================
+# HEALTH CHECK
+# ============================================================
+
+@app.get("/health")
+def health():
+
+    return {
+        "status": "healthy",
+        "datasets_loaded": len(DATASETS)
+    }
+
+
+# ============================================================
+# CREATE DATASET
+# ============================================================
+
+@app.post(
+    "/datasets",
+    status_code=201
+)
+def create_dataset(
+    request: DatasetRequest,
+    response: Response
+):
+
+    request_id = add_common_headers(response)
 
     # --------------------------------------------------------
-    # GENERATE DATA
+    # Generate unique dataset ID
+    # --------------------------------------------------------
+
+    dataset_id = str(uuid.uuid4())
+
+
+    # --------------------------------------------------------
+    # Generate purchase data
     # --------------------------------------------------------
 
     try:
 
         purchases = generate_purchases(
-            start_date=start_date,
-            end_date=end_date,
-            num_records=num_records,
-            include_nulls=include_nulls,
-            null_probability=null_probability
+            start_date=request.start_date,
+            end_date=request.end_date,
+            num_records=request.num_records,
+            include_nulls=request.include_nulls,
+            null_probability=request.null_probability
         )
 
     except ValueError as error:
@@ -148,7 +165,165 @@ def get_purchases(
 
 
     # --------------------------------------------------------
-    # PAGINATION CALCULATION
+    # Dataset metadata
+    # --------------------------------------------------------
+
+    created_at = int(time.time())
+
+    metadata = {
+
+        "dataset_id": dataset_id,
+
+        "start_date": request.start_date,
+        "end_date": request.end_date,
+
+        "num_records": request.num_records,
+
+        "include_nulls": request.include_nulls,
+
+        "null_probability":
+            request.null_probability,
+
+        "created_at": created_at
+    }
+
+
+    # --------------------------------------------------------
+    # Store dataset
+    # --------------------------------------------------------
+
+    DATASETS[dataset_id] = {
+
+        "metadata": metadata,
+
+        "data": purchases
+    }
+
+
+    # --------------------------------------------------------
+    # Response
+    # --------------------------------------------------------
+
+    return {
+
+        "request_id": request_id,
+
+        "message":
+            "Dataset created successfully",
+
+        "dataset": metadata
+    }
+
+
+# ============================================================
+# LIST DATASETS
+# ============================================================
+
+@app.get("/datasets")
+def list_datasets(
+    response: Response
+):
+
+    request_id = add_common_headers(response)
+
+    datasets = [
+
+        dataset["metadata"]
+
+        for dataset in DATASETS.values()
+
+    ]
+
+    return {
+
+        "request_id": request_id,
+
+        "total_datasets": len(datasets),
+
+        "datasets": datasets
+    }
+
+
+# ============================================================
+# GET DATASET INFORMATION
+# ============================================================
+
+@app.get("/datasets/{dataset_id}")
+def get_dataset(
+    dataset_id: str,
+    response: Response
+):
+
+    request_id = add_common_headers(response)
+
+    if dataset_id not in DATASETS:
+
+        raise HTTPException(
+            status_code=404,
+            detail="Dataset not found"
+        )
+
+    return {
+
+        "request_id": request_id,
+
+        "dataset":
+            DATASETS[dataset_id]["metadata"]
+    }
+
+
+# ============================================================
+# GET PURCHASE DATA
+# ============================================================
+
+@app.get("/purchases")
+def get_purchases(
+
+    response: Response,
+
+    dataset_id: str = Query(
+        ...,
+        description="Dataset ID returned from POST /datasets"
+    ),
+
+    page: int = Query(
+        default=1,
+        ge=1
+    ),
+
+    limit: int = Query(
+        default=100,
+        ge=1,
+        le=1000
+    )
+):
+
+    request_id = add_common_headers(response)
+
+
+    # --------------------------------------------------------
+    # Check dataset exists
+    # --------------------------------------------------------
+
+    if dataset_id not in DATASETS:
+
+        raise HTTPException(
+            status_code=404,
+            detail="Dataset not found"
+        )
+
+
+    # --------------------------------------------------------
+    # Get stored dataset
+    # --------------------------------------------------------
+
+    purchases = DATASETS[
+        dataset_id
+    ]["data"]
+
+
+    # --------------------------------------------------------
+    # Pagination
     # --------------------------------------------------------
 
     total_records = len(purchases)
@@ -157,37 +332,17 @@ def get_purchases(
         total_records / limit
     )
 
-    start_index = (page - 1) * limit
+    start_index = (
+        page - 1
+    ) * limit
 
-    end_index = start_index + limit
-
-
-    # --------------------------------------------------------
-    # INVALID PAGE CHECK
-    # --------------------------------------------------------
-
-    if start_index >= total_records:
-
-        return {
-            "request_id": request_id,
-
-            "page": page,
-            "limit": limit,
-
-            "total_records": total_records,
-            "total_pages": total_pages,
-
-            "has_next": False,
-            "has_previous": page > 1,
-
-            "records_returned": 0,
-
-            "data": []
-        }
+    end_index = (
+        start_index + limit
+    )
 
 
     # --------------------------------------------------------
-    # GET CURRENT PAGE
+    # Extract page
     # --------------------------------------------------------
 
     paginated_data = purchases[
@@ -196,39 +351,82 @@ def get_purchases(
 
 
     # --------------------------------------------------------
-    # PAGINATION FLAGS
+    # Pagination metadata
     # --------------------------------------------------------
 
-    has_next = page < total_pages
+    has_next = (
+        page < total_pages
+    )
 
-    has_previous = page > 1
+    has_previous = (
+        page > 1
+    )
 
 
     # --------------------------------------------------------
-    # RESPONSE
+    # Response
     # --------------------------------------------------------
 
     return {
 
         "request_id": request_id,
 
-        "generation_parameters": {
-            "start_date": start_date,
-            "end_date": end_date,
-            "num_records": num_records,
-            "include_nulls": include_nulls,
-            "null_probability": null_probability
-        },
+        "dataset_id": dataset_id,
 
         "pagination": {
+
             "page": page,
+
             "limit": limit,
-            "total_records": total_records,
-            "total_pages": total_pages,
-            "records_returned": len(paginated_data),
-            "has_next": has_next,
-            "has_previous": has_previous
+
+            "total_records":
+                total_records,
+
+            "total_pages":
+                total_pages,
+
+            "records_returned":
+                len(paginated_data),
+
+            "has_next":
+                has_next,
+
+            "has_previous":
+                has_previous
         },
 
         "data": paginated_data
+    }
+
+
+# ============================================================
+# DELETE DATASET
+# ============================================================
+
+@app.delete("/datasets/{dataset_id}")
+def delete_dataset(
+    dataset_id: str,
+    response: Response
+):
+
+    request_id = add_common_headers(response)
+
+    if dataset_id not in DATASETS:
+
+        raise HTTPException(
+            status_code=404,
+            detail="Dataset not found"
+        )
+
+    del DATASETS[dataset_id]
+
+    return {
+
+        "request_id": request_id,
+
+        "message":
+            "Dataset deleted successfully",
+
+        "dataset_id":
+            dataset_id
     }
