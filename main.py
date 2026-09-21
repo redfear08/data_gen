@@ -1,8 +1,11 @@
 from fastapi import FastAPI, Query, HTTPException, Response
+from fastapi.responses import FileResponse, StreamingResponse
 from pydantic import BaseModel, Field
 from data_generator import generate_purchases
 
-from typing import Optional
+import csv
+import io
+import json
 import uuid
 import math
 import time
@@ -15,7 +18,7 @@ import time
 app = FastAPI(
     title="Purchase Data API",
     description="Sample REST API for Data Engineering pipelines",
-    version="2.0.0"
+    version="2.1.0"
 )
 
 
@@ -82,10 +85,11 @@ def add_common_headers(response: Response):
 
     response.headers["X-Request-ID"] = request_id
 
+    # NOTE:
+    # These headers are currently informational only.
+    # Actual rate limiting will be implemented later.
     response.headers["X-RateLimit-Limit"] = "100"
-
     response.headers["X-RateLimit-Remaining"] = "99"
-
     response.headers["X-RateLimit-Reset"] = str(
         int(time.time()) + 60
     )
@@ -94,17 +98,19 @@ def add_common_headers(response: Response):
 
 
 # ============================================================
-# ROOT ENDPOINT
+# PLAYGROUND / HOME PAGE
 # ============================================================
 
-@app.get("/")
-def root():
+@app.get(
+    "/",
+    include_in_schema=False
+)
+def playground():
 
-    return {
-        "message": "Purchase Data API is running",
-        "version": "2.0.0",
-        "docs": "/docs"
-    }
+    return FileResponse(
+        "index.html",
+        media_type="text/html"
+    )
 
 
 # ============================================================
@@ -116,6 +122,7 @@ def health():
 
     return {
         "status": "healthy",
+        "version": "2.1.0",
         "datasets_loaded": len(DATASETS)
     }
 
@@ -175,6 +182,7 @@ def create_dataset(
         "dataset_id": dataset_id,
 
         "start_date": request.start_date,
+
         "end_date": request.end_date,
 
         "num_records": request.num_records,
@@ -245,6 +253,120 @@ def list_datasets(
 
 
 # ============================================================
+# DOWNLOAD DATASET
+# ============================================================
+#
+# Examples:
+#
+# CSV:
+# /datasets/{dataset_id}/download?format=csv
+#
+# JSON:
+# /datasets/{dataset_id}/download?format=json
+#
+# IMPORTANT:
+# Keep this route BEFORE /datasets/{dataset_id}.
+# ============================================================
+
+@app.get("/datasets/{dataset_id}/download")
+def download_dataset(
+
+    dataset_id: str,
+
+    format: str = Query(
+        default="json",
+        pattern="^(json|csv)$",
+        description="Download format: json or csv"
+    )
+):
+
+    # --------------------------------------------------------
+    # Validate dataset
+    # --------------------------------------------------------
+
+    if dataset_id not in DATASETS:
+
+        raise HTTPException(
+            status_code=404,
+            detail="Dataset not found"
+        )
+
+
+    purchases = DATASETS[
+        dataset_id
+    ]["data"]
+
+
+    # ========================================================
+    # JSON DOWNLOAD
+    # ========================================================
+
+    if format == "json":
+
+        json_content = json.dumps(
+            purchases,
+            indent=2,
+            ensure_ascii=False
+        )
+
+        json_bytes = io.BytesIO(
+            json_content.encode("utf-8")
+        )
+
+        return StreamingResponse(
+            json_bytes,
+            media_type="application/json",
+            headers={
+                "Content-Disposition":
+                    f'attachment; '
+                    f'filename="purchase_data_{dataset_id}.json"'
+            }
+        )
+
+
+    # ========================================================
+    # CSV DOWNLOAD
+    # ========================================================
+
+    output = io.StringIO()
+
+    if purchases:
+
+        fieldnames = list(
+            purchases[0].keys()
+        )
+
+        writer = csv.DictWriter(
+            output,
+            fieldnames=fieldnames
+        )
+
+        writer.writeheader()
+
+        writer.writerows(
+            purchases
+        )
+
+
+    csv_content = output.getvalue()
+
+    csv_bytes = io.BytesIO(
+        csv_content.encode("utf-8")
+    )
+
+
+    return StreamingResponse(
+        csv_bytes,
+        media_type="text/csv",
+        headers={
+            "Content-Disposition":
+                f'attachment; '
+                f'filename="purchase_data_{dataset_id}.csv"'
+        }
+    )
+
+
+# ============================================================
 # GET DATASET INFORMATION
 # ============================================================
 
@@ -263,12 +385,15 @@ def get_dataset(
             detail="Dataset not found"
         )
 
+
     return {
 
         "request_id": request_id,
 
         "dataset":
-            DATASETS[dataset_id]["metadata"]
+            DATASETS[
+                dataset_id
+            ]["metadata"]
     }
 
 
@@ -283,18 +408,23 @@ def get_purchases(
 
     dataset_id: str = Query(
         ...,
-        description="Dataset ID returned from POST /datasets"
+        description=(
+            "Dataset ID returned "
+            "from POST /datasets"
+        )
     ),
 
     page: int = Query(
         default=1,
-        ge=1
+        ge=1,
+        description="Page number"
     ),
 
     limit: int = Query(
         default=100,
         ge=1,
-        le=1000
+        le=1000,
+        description="Records per page"
     )
 ):
 
@@ -332,9 +462,11 @@ def get_purchases(
         total_records / limit
     )
 
+
     start_index = (
         page - 1
     ) * limit
+
 
     end_index = (
         start_index + limit
@@ -342,7 +474,7 @@ def get_purchases(
 
 
     # --------------------------------------------------------
-    # Extract page
+    # Extract requested page
     # --------------------------------------------------------
 
     paginated_data = purchases[
@@ -395,7 +527,8 @@ def get_purchases(
                 has_previous
         },
 
-        "data": paginated_data
+        "data":
+            paginated_data
     }
 
 
@@ -411,6 +544,7 @@ def delete_dataset(
 
     request_id = add_common_headers(response)
 
+
     if dataset_id not in DATASETS:
 
         raise HTTPException(
@@ -418,11 +552,16 @@ def delete_dataset(
             detail="Dataset not found"
         )
 
-    del DATASETS[dataset_id]
+
+    del DATASETS[
+        dataset_id
+    ]
+
 
     return {
 
-        "request_id": request_id,
+        "request_id":
+            request_id,
 
         "message":
             "Dataset deleted successfully",

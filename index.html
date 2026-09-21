@@ -1,0 +1,1216 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+
+    <meta
+        name="viewport"
+        content="width=device-width, initial-scale=1.0"
+    >
+
+    <title>Purchase Data API Playground</title>
+
+    <style>
+
+        * {
+            box-sizing: border-box;
+        }
+
+        body {
+            margin: 0;
+            font-family:
+                Inter,
+                -apple-system,
+                BlinkMacSystemFont,
+                "Segoe UI",
+                sans-serif;
+            background: #f5f7fb;
+            color: #1e293b;
+        }
+
+        .container {
+            max-width: 1250px;
+            margin: auto;
+            padding: 40px 24px 70px;
+        }
+
+        .hero {
+            margin-bottom: 32px;
+        }
+
+        .hero h1 {
+            margin: 0;
+            font-size: 36px;
+            color: #0f172a;
+        }
+
+        .hero p {
+            color: #64748b;
+            margin-top: 10px;
+            font-size: 16px;
+        }
+
+        .badge {
+            display: inline-block;
+            background: #dcfce7;
+            color: #166534;
+            padding: 6px 12px;
+            border-radius: 20px;
+            font-size: 13px;
+            font-weight: 600;
+            margin-bottom: 15px;
+        }
+
+        .card {
+            background: white;
+            border-radius: 14px;
+            padding: 25px;
+            margin-bottom: 24px;
+
+            box-shadow:
+                0 1px 3px rgba(0,0,0,.08),
+                0 10px 30px rgba(0,0,0,.04);
+        }
+
+        .card h2 {
+            margin-top: 0;
+            font-size: 20px;
+            color: #0f172a;
+        }
+
+        .form-grid {
+            display: grid;
+            grid-template-columns:
+                repeat(auto-fit, minmax(180px,1fr));
+            gap: 18px;
+            align-items: end;
+        }
+
+        label {
+            display: block;
+            font-size: 13px;
+            font-weight: 600;
+            margin-bottom: 7px;
+            color: #475569;
+        }
+
+        input,
+        select {
+            width: 100%;
+            padding: 11px 12px;
+            border: 1px solid #cbd5e1;
+            border-radius: 8px;
+            font-size: 14px;
+            background: white;
+        }
+
+        input:focus {
+            outline: none;
+            border-color: #2563eb;
+        }
+
+        .checkbox-wrapper {
+            display: flex;
+            align-items: center;
+            height: 42px;
+            gap: 9px;
+        }
+
+        .checkbox-wrapper input {
+            width: auto;
+        }
+
+        button,
+        .button {
+            border: none;
+            background: #2563eb;
+            color: white;
+            padding: 11px 18px;
+            border-radius: 8px;
+            cursor: pointer;
+            font-size: 14px;
+            font-weight: 600;
+            text-decoration: none;
+            display: inline-block;
+        }
+
+        button:hover,
+        .button:hover {
+            background: #1d4ed8;
+        }
+
+        button:disabled {
+            opacity: .55;
+            cursor: not-allowed;
+        }
+
+        .secondary {
+            background: #0f172a;
+        }
+
+        .secondary:hover {
+            background: #1e293b;
+        }
+
+        .success {
+            background: #16a34a;
+        }
+
+        .success:hover {
+            background: #15803d;
+        }
+
+        .status {
+            margin-top: 18px;
+            padding: 13px;
+            border-radius: 8px;
+            display: none;
+        }
+
+        .status.success-message {
+            display: block;
+            background: #dcfce7;
+            color: #166534;
+        }
+
+        .status.error-message {
+            display: block;
+            background: #fee2e2;
+            color: #991b1b;
+        }
+
+        .dataset-info {
+            display: grid;
+            grid-template-columns:
+                repeat(auto-fit, minmax(180px,1fr));
+            gap: 15px;
+            margin: 20px 0;
+        }
+
+        .metric {
+            padding: 15px;
+            background: #f8fafc;
+            border-radius: 9px;
+        }
+
+        .metric-label {
+            color: #64748b;
+            font-size: 12px;
+        }
+
+        .metric-value {
+            margin-top: 5px;
+            font-weight: 700;
+            word-break: break-all;
+        }
+
+        .download-buttons {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 10px;
+        }
+
+        .table-wrapper {
+            overflow-x: auto;
+        }
+
+        table {
+            border-collapse: collapse;
+            width: 100%;
+            font-size: 13px;
+        }
+
+        th {
+            background: #f1f5f9;
+            text-align: left;
+            padding: 11px;
+            white-space: nowrap;
+        }
+
+        td {
+            padding: 10px;
+            border-bottom: 1px solid #e2e8f0;
+            white-space: nowrap;
+        }
+
+        tr:hover {
+            background: #f8fafc;
+        }
+
+        .code-block {
+            position: relative;
+            background: #0f172a;
+            color: #e2e8f0;
+            padding: 18px;
+            border-radius: 9px;
+            overflow-x: auto;
+            font-family:
+                "SFMono-Regular",
+                Consolas,
+                monospace;
+            font-size: 13px;
+            line-height: 1.6;
+            margin-top: 10px;
+        }
+
+        .copy-button {
+            margin-top: 10px;
+            background: #475569;
+            font-size: 12px;
+            padding: 7px 12px;
+        }
+
+        .endpoint {
+            display: flex;
+            align-items: center;
+            gap: 12px;
+            border-bottom: 1px solid #e2e8f0;
+            padding: 12px 0;
+        }
+
+        .method {
+            width: 65px;
+            font-size: 12px;
+            font-weight: 700;
+        }
+
+        .get {
+            color: #2563eb;
+        }
+
+        .post {
+            color: #16a34a;
+        }
+
+        .delete {
+            color: #dc2626;
+        }
+
+        .endpoint code {
+            font-size: 13px;
+        }
+
+        .hidden {
+            display: none;
+        }
+
+        .section-description {
+            color: #64748b;
+            font-size: 14px;
+            margin-top: -7px;
+            margin-bottom: 20px;
+        }
+
+        footer {
+            text-align: center;
+            color: #94a3b8;
+            font-size: 13px;
+            margin-top: 40px;
+        }
+
+        @media (max-width: 600px) {
+
+            .hero h1 {
+                font-size: 28px;
+            }
+
+            .container {
+                padding: 25px 15px;
+            }
+
+            .card {
+                padding: 18px;
+            }
+
+        }
+
+    </style>
+</head>
+
+
+<body>
+
+<div class="container">
+
+    <!-- HERO -->
+
+    <div class="hero">
+
+        <span class="badge">
+            REST API Playground
+        </span>
+
+        <h1>
+            Purchase Data Generator
+        </h1>
+
+        <p>
+            Generate synthetic purchase data for
+            Data Engineering pipelines, preview it,
+            access it through REST APIs, or download
+            it as CSV/JSON.
+        </p>
+
+    </div>
+
+
+    <!-- DATASET CONFIGURATION -->
+
+    <div class="card">
+
+        <h2>
+            Generate Dataset
+        </h2>
+
+        <p class="section-description">
+            Configure the synthetic dataset you want
+            the API to generate.
+        </p>
+
+
+        <div class="form-grid">
+
+            <div>
+
+                <label>
+                    Start Date
+                </label>
+
+                <input
+                    type="date"
+                    id="startDate"
+                    value="2025-01-01"
+                >
+
+            </div>
+
+
+            <div>
+
+                <label>
+                    End Date
+                </label>
+
+                <input
+                    type="date"
+                    id="endDate"
+                    value="2025-12-31"
+                >
+
+            </div>
+
+
+            <div>
+
+                <label>
+                    Number of Records
+                </label>
+
+                <input
+                    type="number"
+                    id="numRecords"
+                    value="1000"
+                    min="1"
+                    max="100000"
+                >
+
+            </div>
+
+
+            <div>
+
+                <label>
+                    Null Probability
+                </label>
+
+                <input
+                    type="number"
+                    id="nullProbability"
+                    value="0.05"
+                    min="0"
+                    max="1"
+                    step="0.01"
+                >
+
+            </div>
+
+
+            <div>
+
+                <label>
+                    Include Nulls
+                </label>
+
+                <div class="checkbox-wrapper">
+
+                    <input
+                        type="checkbox"
+                        id="includeNulls"
+                        checked
+                    >
+
+                    <span>
+                        Generate dirty data
+                    </span>
+
+                </div>
+
+            </div>
+
+
+            <div>
+
+                <button
+                    id="generateButton"
+                    onclick="generateDataset()"
+                >
+                    Generate Dataset
+                </button>
+
+            </div>
+
+        </div>
+
+
+        <div
+            id="statusMessage"
+            class="status"
+        ></div>
+
+    </div>
+
+
+    <!-- RESULT -->
+
+    <div
+        id="resultSection"
+        class="hidden"
+    >
+
+        <div class="card">
+
+            <h2>
+                Dataset Ready
+            </h2>
+
+
+            <div class="dataset-info">
+
+                <div class="metric">
+
+                    <div class="metric-label">
+                        Dataset ID
+                    </div>
+
+                    <div
+                        class="metric-value"
+                        id="datasetId"
+                    ></div>
+
+                </div>
+
+
+                <div class="metric">
+
+                    <div class="metric-label">
+                        Records
+                    </div>
+
+                    <div
+                        class="metric-value"
+                        id="recordCount"
+                    ></div>
+
+                </div>
+
+
+                <div class="metric">
+
+                    <div class="metric-label">
+                        Date Range
+                    </div>
+
+                    <div
+                        class="metric-value"
+                        id="dateRange"
+                    ></div>
+
+                </div>
+
+            </div>
+
+
+            <div class="download-buttons">
+
+                <a
+                    id="csvDownload"
+                    class="button success"
+                >
+                    Download CSV
+                </a>
+
+                <a
+                    id="jsonDownload"
+                    class="button secondary"
+                >
+                    Download JSON
+                </a>
+
+            </div>
+
+        </div>
+
+
+        <!-- DATA PREVIEW -->
+
+        <div class="card">
+
+            <h2>
+                Data Preview
+            </h2>
+
+            <p class="section-description">
+                Showing the first 10 records from
+                the generated dataset.
+            </p>
+
+            <div
+                class="table-wrapper"
+                id="tableContainer"
+            ></div>
+
+        </div>
+
+
+        <!-- API ACCESS -->
+
+        <div class="card">
+
+            <h2>
+                Access Through REST API
+            </h2>
+
+            <p class="section-description">
+                Use this endpoint from Databricks,
+                Python, Spark or another HTTP client.
+            </p>
+
+
+            <h3>
+                Endpoint
+            </h3>
+
+            <div
+                class="code-block"
+                id="endpointCode"
+            ></div>
+
+            <button
+                class="copy-button"
+                onclick="copyCode('endpointCode')"
+            >
+                Copy Endpoint
+            </button>
+
+
+            <h3>
+                Python
+            </h3>
+
+            <div
+                class="code-block"
+                id="pythonCode"
+            ></div>
+
+            <button
+                class="copy-button"
+                onclick="copyCode('pythonCode')"
+            >
+                Copy Python
+            </button>
+
+
+            <h3>
+                cURL
+            </h3>
+
+            <div
+                class="code-block"
+                id="curlCode"
+            ></div>
+
+            <button
+                class="copy-button"
+                onclick="copyCode('curlCode')"
+            >
+                Copy cURL
+            </button>
+
+        </div>
+
+    </div>
+
+
+    <!-- ENDPOINT DOCUMENTATION -->
+
+    <div class="card">
+
+        <h2>
+            Available API Endpoints
+        </h2>
+
+
+        <div class="endpoint">
+
+            <span class="method post">
+                POST
+            </span>
+
+            <code>
+                /datasets
+            </code>
+
+            <span>
+                Generate a new dataset
+            </span>
+
+        </div>
+
+
+        <div class="endpoint">
+
+            <span class="method get">
+                GET
+            </span>
+
+            <code>
+                /datasets
+            </code>
+
+            <span>
+                List generated datasets
+            </span>
+
+        </div>
+
+
+        <div class="endpoint">
+
+            <span class="method get">
+                GET
+            </span>
+
+            <code>
+                /datasets/{dataset_id}
+            </code>
+
+            <span>
+                Dataset metadata
+            </span>
+
+        </div>
+
+
+        <div class="endpoint">
+
+            <span class="method get">
+                GET
+            </span>
+
+            <code>
+                /purchases
+            </code>
+
+            <span>
+                Retrieve paginated purchase data
+            </span>
+
+        </div>
+
+
+        <div class="endpoint">
+
+            <span class="method get">
+                GET
+            </span>
+
+            <code>
+                /datasets/{dataset_id}/download
+            </code>
+
+            <span>
+                Download CSV or JSON
+            </span>
+
+        </div>
+
+
+        <div class="endpoint">
+
+            <span class="method delete">
+                DELETE
+            </span>
+
+            <code>
+                /datasets/{dataset_id}
+            </code>
+
+            <span>
+                Delete dataset
+            </span>
+
+        </div>
+
+
+        <div class="endpoint">
+
+            <span class="method get">
+                GET
+            </span>
+
+            <code>
+                /health
+            </code>
+
+            <span>
+                API health check
+            </span>
+
+        </div>
+
+
+        <div class="endpoint">
+
+            <span class="method get">
+                GET
+            </span>
+
+            <code>
+                /docs
+            </code>
+
+            <span>
+                Swagger API documentation
+            </span>
+
+        </div>
+
+    </div>
+
+
+    <footer>
+
+        Purchase Data Generator API
+        • FastAPI • Docker • Data Engineering
+
+    </footer>
+
+</div>
+
+
+<script>
+
+let currentDatasetId = null;
+
+
+/* ==========================================================
+   GENERATE DATASET
+========================================================== */
+
+async function generateDataset() {
+
+    const button =
+        document.getElementById("generateButton");
+
+    const status =
+        document.getElementById("statusMessage");
+
+
+    button.disabled = true;
+    button.innerText = "Generating...";
+
+    status.className = "status";
+    status.innerText = "";
+
+
+    const payload = {
+
+        start_date:
+            document.getElementById(
+                "startDate"
+            ).value,
+
+        end_date:
+            document.getElementById(
+                "endDate"
+            ).value,
+
+        num_records:
+            Number(
+                document.getElementById(
+                    "numRecords"
+                ).value
+            ),
+
+        include_nulls:
+            document.getElementById(
+                "includeNulls"
+            ).checked,
+
+        null_probability:
+            Number(
+                document.getElementById(
+                    "nullProbability"
+                ).value
+            )
+    };
+
+
+    try {
+
+        const response = await fetch(
+            "/datasets",
+            {
+                method: "POST",
+
+                headers: {
+                    "Content-Type":
+                        "application/json"
+                },
+
+                body:
+                    JSON.stringify(payload)
+            }
+        );
+
+
+        const result =
+            await response.json();
+
+
+        if (!response.ok) {
+
+            throw new Error(
+                result.detail ||
+                "Dataset generation failed"
+            );
+
+        }
+
+
+        currentDatasetId =
+            result.dataset.dataset_id;
+
+
+        status.className =
+            "status success-message";
+
+        status.innerText =
+            "Dataset generated successfully.";
+
+
+        showDatasetInformation(
+            result.dataset
+        );
+
+
+        await loadPreview(
+            currentDatasetId
+        );
+
+    }
+    catch (error) {
+
+        status.className =
+            "status error-message";
+
+        status.innerText =
+            error.message;
+
+    }
+    finally {
+
+        button.disabled = false;
+
+        button.innerText =
+            "Generate Dataset";
+
+    }
+
+}
+
+
+/* ==========================================================
+   DATASET INFORMATION
+========================================================== */
+
+function showDatasetInformation(dataset) {
+
+    document.getElementById(
+        "resultSection"
+    ).classList.remove("hidden");
+
+
+    document.getElementById(
+        "datasetId"
+    ).innerText =
+        dataset.dataset_id;
+
+
+    document.getElementById(
+        "recordCount"
+    ).innerText =
+        dataset.num_records.toLocaleString();
+
+
+    document.getElementById(
+        "dateRange"
+    ).innerText =
+        dataset.start_date +
+        " → " +
+        dataset.end_date;
+
+
+    document.getElementById(
+        "csvDownload"
+    ).href =
+        `/datasets/${dataset.dataset_id}/download?format=csv`;
+
+
+    document.getElementById(
+        "jsonDownload"
+    ).href =
+        `/datasets/${dataset.dataset_id}/download?format=json`;
+
+
+    buildAccessExamples(
+        dataset.dataset_id
+    );
+
+}
+
+
+/* ==========================================================
+   PREVIEW
+========================================================== */
+
+async function loadPreview(datasetId) {
+
+    const response = await fetch(
+        `/purchases?dataset_id=${encodeURIComponent(datasetId)}&page=1&limit=10`
+    );
+
+
+    if (!response.ok) {
+
+        throw new Error(
+            "Unable to load dataset preview"
+        );
+
+    }
+
+
+    const result =
+        await response.json();
+
+
+    renderTable(
+        result.data
+    );
+
+}
+
+
+/* ==========================================================
+   RENDER TABLE
+========================================================== */
+
+function renderTable(records) {
+
+    const container =
+        document.getElementById(
+            "tableContainer"
+        );
+
+
+    if (!records.length) {
+
+        container.innerHTML =
+            "<p>No records available.</p>";
+
+        return;
+
+    }
+
+
+    const columns =
+        Object.keys(records[0]);
+
+
+    let html = "<table>";
+
+
+    html += "<thead><tr>";
+
+    columns.forEach(column => {
+
+        html +=
+            `<th>${escapeHtml(column)}</th>`;
+
+    });
+
+    html += "</tr></thead>";
+
+
+    html += "<tbody>";
+
+
+    records.forEach(record => {
+
+        html += "<tr>";
+
+        columns.forEach(column => {
+
+            let value =
+                record[column];
+
+            if (
+                value === null ||
+                value === undefined
+            ) {
+
+                value = "NULL";
+
+            }
+
+            html +=
+                `<td>${escapeHtml(String(value))}</td>`;
+
+        });
+
+        html += "</tr>";
+
+    });
+
+
+    html += "</tbody></table>";
+
+
+    container.innerHTML = html;
+
+}
+
+
+/* ==========================================================
+   API ACCESS EXAMPLES
+========================================================== */
+
+function buildAccessExamples(datasetId) {
+
+    const baseUrl =
+        window.location.origin;
+
+
+    const endpoint =
+        `${baseUrl}/purchases?dataset_id=${datasetId}&page=1&limit=100`;
+
+
+    document.getElementById(
+        "endpointCode"
+    ).innerText =
+        `GET ${endpoint}`;
+
+
+    const pythonCode =
+`import requests
+
+url = "${baseUrl}/purchases"
+
+params = {
+    "dataset_id": "${datasetId}",
+    "page": 1,
+    "limit": 100
+}
+
+response = requests.get(
+    url,
+    params=params,
+    timeout=30
+)
+
+response.raise_for_status()
+
+data = response.json()
+
+print(data)`;
+
+
+    document.getElementById(
+        "pythonCode"
+    ).innerText =
+        pythonCode;
+
+
+    const curlCode =
+`curl "${endpoint}"`;
+
+
+    document.getElementById(
+        "curlCode"
+    ).innerText =
+        curlCode;
+
+}
+
+
+/* ==========================================================
+   COPY CODE
+========================================================== */
+
+async function copyCode(elementId) {
+
+    const text =
+        document.getElementById(
+            elementId
+        ).innerText;
+
+
+    try {
+
+        await navigator.clipboard.writeText(
+            text
+        );
+
+    }
+    catch {
+
+        alert(
+            "Unable to copy automatically."
+        );
+
+    }
+
+}
+
+
+/* ==========================================================
+   ESCAPE HTML
+========================================================== */
+
+function escapeHtml(value) {
+
+    return value
+        .replaceAll("&", "&amp;")
+        .replaceAll("<", "&lt;")
+        .replaceAll(">", "&gt;")
+        .replaceAll('"', "&quot;")
+        .replaceAll("'", "&#039;");
+
+}
+
+</script>
+
+</body>
+
+</html>
