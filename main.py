@@ -9,6 +9,7 @@ import json
 import uuid
 import math
 import time
+from threading import Lock, BoundedSemaphore
 
 
 # ============================================================
@@ -43,6 +44,58 @@ app = FastAPI(
 
 DATASETS = {}
 
+# These limits apply to one process. Keep Uvicorn on a single worker.
+MAX_RECORDS_PER_DATASET = 10_000
+MAX_TOTAL_RECORDS = 50_000
+MAX_DATASETS = 10
+EXPORT_BATCH_SIZE = 100
+STORAGE_LOCK = Lock()
+PENDING_DATASETS = {}
+DOWNLOAD_SLOTS = BoundedSemaphore(2)
+
+
+def find_dataset(dataset_id):
+    # Get a stable reference even if another request deletes the entry.
+    with STORAGE_LOCK:
+        dataset = DATASETS.get(dataset_id)
+    if dataset is None:
+        raise HTTPException(status_code=404, detail="Dataset not found")
+    return dataset
+
+
+class LimitedDownloadResponse(StreamingResponse):
+    async def __call__(self, scope, receive, send):
+        # Release the slot on completion, disconnect, or streaming failure.
+        try:
+            await super().__call__(scope, receive, send)
+        finally:
+            DOWNLOAD_SLOTS.release()
+
+
+def stream_json(purchases):
+    yield "["
+    for start in range(0, len(purchases), EXPORT_BATCH_SIZE):
+        chunk = ",".join(
+            json.dumps(record, ensure_ascii=False)
+            for record in purchases[start:start + EXPORT_BATCH_SIZE]
+        )
+        yield ("," if start else "") + chunk
+    yield "]"
+
+
+def stream_csv(purchases):
+    if not purchases:
+        return
+    with io.StringIO(newline="") as buffer:
+        writer = csv.DictWriter(buffer, fieldnames=list(purchases[0]))
+        writer.writeheader()
+        for start in range(0, len(purchases), EXPORT_BATCH_SIZE):
+            writer.writerows(purchases[start:start + EXPORT_BATCH_SIZE])
+            yield buffer.getvalue()
+            buffer.seek(0)
+            buffer.truncate(0)
+
+
 
 # ============================================================
 # REQUEST MODEL
@@ -63,7 +116,7 @@ class DatasetRequest(BaseModel):
     num_records: int = Field(
         default=1000,
         ge=1,
-        le=100000
+        le=MAX_RECORDS_PER_DATASET
     )
 
     include_nulls: bool = False
@@ -149,12 +202,19 @@ def create_dataset(
     dataset_id = str(uuid.uuid4())
 
 
-    # --------------------------------------------------------
-    # Generate purchase data
-    # --------------------------------------------------------
+    # Reserve capacity before generating, without holding the lock during work.
+    with STORAGE_LOCK:
+        used_records = sum(len(item["data"]) for item in DATASETS.values())
+        reserved_records = sum(PENDING_DATASETS.values())
+        if (len(DATASETS) + len(PENDING_DATASETS) >= MAX_DATASETS
+                or used_records + reserved_records + request.num_records > MAX_TOTAL_RECORDS):
+            raise HTTPException(
+                status_code=503,
+                detail="Dataset capacity reached. Delete an existing dataset and retry."
+            )
+        PENDING_DATASETS[dataset_id] = request.num_records
 
     try:
-
         purchases = generate_purchases(
             start_date=request.start_date,
             end_date=request.end_date,
@@ -162,50 +222,24 @@ def create_dataset(
             include_nulls=request.include_nulls,
             null_probability=request.null_probability
         )
-
+        metadata = {
+            "dataset_id": dataset_id,
+            "start_date": request.start_date,
+            "end_date": request.end_date,
+            "num_records": request.num_records,
+            "include_nulls": request.include_nulls,
+            "null_probability": request.null_probability,
+            "created_at": int(time.time())
+        }
+        with STORAGE_LOCK:
+            DATASETS[dataset_id] = {"metadata": metadata, "data": purchases}
+            del PENDING_DATASETS[dataset_id]
     except ValueError as error:
-
-        raise HTTPException(
-            status_code=400,
-            detail=str(error)
-        )
-
-
-    # --------------------------------------------------------
-    # Dataset metadata
-    # --------------------------------------------------------
-
-    created_at = int(time.time())
-
-    metadata = {
-
-        "dataset_id": dataset_id,
-
-        "start_date": request.start_date,
-
-        "end_date": request.end_date,
-
-        "num_records": request.num_records,
-
-        "include_nulls": request.include_nulls,
-
-        "null_probability":
-            request.null_probability,
-
-        "created_at": created_at
-    }
-
-
-    # --------------------------------------------------------
-    # Store dataset
-    # --------------------------------------------------------
-
-    DATASETS[dataset_id] = {
-
-        "metadata": metadata,
-
-        "data": purchases
-    }
+        raise HTTPException(status_code=400, detail=str(error)) from error
+    finally:
+        # Failed generation must not permanently consume capacity.
+        with STORAGE_LOCK:
+            PENDING_DATASETS.pop(dataset_id, None)
 
 
     # --------------------------------------------------------
@@ -234,13 +268,8 @@ def list_datasets(
 
     request_id = add_common_headers(response)
 
-    datasets = [
-
-        dataset["metadata"]
-
-        for dataset in DATASETS.values()
-
-    ]
+    with STORAGE_LOCK:
+        datasets = [dataset["metadata"] for dataset in DATASETS.values()]
 
     return {
 
@@ -280,90 +309,25 @@ def download_dataset(
     )
 ):
 
-    # --------------------------------------------------------
-    # Validate dataset
-    # --------------------------------------------------------
-
-    if dataset_id not in DATASETS:
-
+    # Bound the number of downloads retaining dataset references after deletion.
+    if not DOWNLOAD_SLOTS.acquire(blocking=False):
         raise HTTPException(
-            status_code=404,
-            detail="Dataset not found"
+            status_code=503,
+            detail="Download capacity reached. Retry shortly.",
+            headers={"Retry-After": "5"}
         )
-
-
-    purchases = DATASETS[
-        dataset_id
-    ]["data"]
-
-
-    # ========================================================
-    # JSON DOWNLOAD
-    # ========================================================
-
-    if format == "json":
-
-        json_content = json.dumps(
-            purchases,
-            indent=2,
-            ensure_ascii=False
+    try:
+        purchases = find_dataset(dataset_id)["data"]
+        content = stream_json(purchases) if format == "json" else stream_csv(purchases)
+        return LimitedDownloadResponse(
+            content,
+            media_type="application/json" if format == "json" else "text/csv",
+            headers={"Content-Disposition":
+                     f'attachment; filename="purchase_data_{dataset_id}.{format}"'}
         )
-
-        json_bytes = io.BytesIO(
-            json_content.encode("utf-8")
-        )
-
-        return StreamingResponse(
-            json_bytes,
-            media_type="application/json",
-            headers={
-                "Content-Disposition":
-                    f'attachment; '
-                    f'filename="purchase_data_{dataset_id}.json"'
-            }
-        )
-
-
-    # ========================================================
-    # CSV DOWNLOAD
-    # ========================================================
-
-    output = io.StringIO()
-
-    if purchases:
-
-        fieldnames = list(
-            purchases[0].keys()
-        )
-
-        writer = csv.DictWriter(
-            output,
-            fieldnames=fieldnames
-        )
-
-        writer.writeheader()
-
-        writer.writerows(
-            purchases
-        )
-
-
-    csv_content = output.getvalue()
-
-    csv_bytes = io.BytesIO(
-        csv_content.encode("utf-8")
-    )
-
-
-    return StreamingResponse(
-        csv_bytes,
-        media_type="text/csv",
-        headers={
-            "Content-Disposition":
-                f'attachment; '
-                f'filename="purchase_data_{dataset_id}.csv"'
-        }
-    )
+    except BaseException:
+        DOWNLOAD_SLOTS.release()
+        raise
 
 
 # ============================================================
@@ -378,23 +342,8 @@ def get_dataset(
 
     request_id = add_common_headers(response)
 
-    if dataset_id not in DATASETS:
-
-        raise HTTPException(
-            status_code=404,
-            detail="Dataset not found"
-        )
-
-
-    return {
-
-        "request_id": request_id,
-
-        "dataset":
-            DATASETS[
-                dataset_id
-            ]["metadata"]
-    }
+    dataset = find_dataset(dataset_id)
+    return {"request_id": request_id, "dataset": dataset["metadata"]}
 
 
 # ============================================================
@@ -431,26 +380,7 @@ def get_purchases(
     request_id = add_common_headers(response)
 
 
-    # --------------------------------------------------------
-    # Check dataset exists
-    # --------------------------------------------------------
-
-    if dataset_id not in DATASETS:
-
-        raise HTTPException(
-            status_code=404,
-            detail="Dataset not found"
-        )
-
-
-    # --------------------------------------------------------
-    # Get stored dataset
-    # --------------------------------------------------------
-
-    purchases = DATASETS[
-        dataset_id
-    ]["data"]
-
+    purchases = find_dataset(dataset_id)["data"]
 
     # --------------------------------------------------------
     # Pagination
@@ -545,17 +475,9 @@ def delete_dataset(
     request_id = add_common_headers(response)
 
 
-    if dataset_id not in DATASETS:
-
-        raise HTTPException(
-            status_code=404,
-            detail="Dataset not found"
-        )
-
-
-    del DATASETS[
-        dataset_id
-    ]
+    with STORAGE_LOCK:
+        if DATASETS.pop(dataset_id, None) is None:
+            raise HTTPException(status_code=404, detail="Dataset not found")
 
 
     return {

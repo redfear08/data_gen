@@ -671,3 +671,23 @@ This project is primarily designed as a hands-on **Data Engineering learning and
 
 It provides a controllable REST API source so data pipelines can be developed and tested against realistic scenarios such as pagination, dirty data, data-quality failures, dimensional modeling, and eventually incremental ingestion and rate limiting.
 
+
+
+## Memory limits and downloads
+
+Run exactly one Uvicorn worker with the current in-memory store.
+Each dataset accepts at most **10,000 records** (larger requests return 422).
+The process holds at most **50,000 records** across **10 datasets**, including
+reservations for generation in progress. A lock prevents concurrent requests
+from overbooking storage. Failed generation releases its reservation.
+A full store returns **503**; use `GET /datasets` and
+`DELETE /datasets/{dataset_id}` to free capacity. Datasets do not expire automatically.
+
+CSV and JSON exports serialize batches of 100 records instead of building a
+complete export buffer. JSON remains an array, without pretty-printing.
+At most two downloads run concurrently; extra downloads return **503** with
+`Retry-After: 5`. Slots are released on completion, disconnect, or streaming failure.
+Deleting a dataset does not interrupt an active download, so its memory can remain
+in use until that download ends. Record limits are not an exact process RAM budget;
+measure memory before adjusting constants in `main.py`.
+Storage still disappears on restart. Rate-limit headers remain simulated.
