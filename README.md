@@ -691,3 +691,26 @@ Deleting a dataset does not interrupt an active download, so its memory can rema
 in use until that download ends. Record limits are not an exact process RAM budget;
 measure memory before adjusting constants in `main.py`.
 Storage still disappears on restart. Rate-limit headers remain simulated.
+
+
+## Release identity
+
+`VERSION` is the single source for the application version (currently `2.2.0`).
+Update it intentionally for a release. FastAPI's OpenAPI metadata and `/health`
+read this file relative to `main.py`, and the playground footer reads `/health`.
+
+The optional, generated `build_info.json` contains:
+
+```json
+{"source_commit": "<full tested source commit SHA>"}
+```
+
+Without that file, `/health` returns `source_commit: "unknown"` for local development.
+The footer shows the version and the first seven characters of the source commit;
+the full SHA remains available in `/health` and the footer tooltip.
+
+The deployment workflow is not implemented yet. When added, it must generate this
+file from the tested source revision and explicitly add it to the deployment branch
+with `git add -f build_info.json`, since normal development ignores it. Do not add it
+to `.dockerignore`: the existing `COPY . .` includes both release files in the image.
+After deployment, compare `/health`'s `source_commit` with the expected tested SHA.

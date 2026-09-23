@@ -10,16 +10,32 @@ import uuid
 import math
 import time
 from threading import Lock, BoundedSemaphore
+from pathlib import Path
 
 
 # ============================================================
 # FASTAPI APPLICATION
 # ============================================================
 
+# Resolve release files relative to this module, independent of the launch directory.
+BASE_DIR = Path(__file__).resolve().parent
+APP_VERSION = (BASE_DIR / "VERSION").read_text(encoding="utf-8").strip()
+
+# The deployment workflow supplies metadata for the tested source commit.
+# Local development works without this generated file.
+build_info_path = BASE_DIR / "build_info.json"
+BUILD_INFO = (
+    json.loads(build_info_path.read_text(encoding="utf-8"))
+    if build_info_path.exists()
+    else {}
+)
+SOURCE_COMMIT = BUILD_INFO.get("source_commit", "unknown")
+
+
 app = FastAPI(
     title="Purchase Data API",
     description="Sample REST API for Data Engineering pipelines",
-    version="2.1.0"
+    version=APP_VERSION
 )
 
 
@@ -175,7 +191,8 @@ def health():
 
     return {
         "status": "healthy",
-        "version": "2.1.0",
+        "version": APP_VERSION,
+        "source_commit": SOURCE_COMMIT,
         "datasets_loaded": len(DATASETS)
     }
 

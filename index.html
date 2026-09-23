@@ -801,6 +801,7 @@
 
 
     <footer>
+        <div id="releaseInfo" aria-live="polite"></div>
 
         Purchase Data Generator API
         • FastAPI • Docker • Data Engineering
@@ -813,6 +814,23 @@
 <script>
 
 let currentDatasetId = null;
+
+// A metadata failure must not stop users from generating datasets.
+async function loadReleaseInfo() {
+    const label = document.getElementById("releaseInfo");
+    try {
+        const response = await fetch("/health", { cache: "no-store" });
+        if (!response.ok) throw new Error("Health request failed");
+        const health = await response.json();
+        const commit = health.source_commit || "unknown";
+        label.textContent = `Purchase Data API · v${health.version} · ${commit.slice(0, 7)}`;
+        label.title = `Source commit: ${commit}`;
+    } catch {
+        label.textContent = "Version information unavailable";
+    }
+}
+
+loadReleaseInfo();
 
 
 /* ==========================================================
