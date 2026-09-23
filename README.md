@@ -714,3 +714,29 @@ file from the tested source revision and explicitly add it to the deployment bra
 with `git add -f build_info.json`, since normal development ignores it. Do not add it
 to `.dockerignore`: the existing `COPY . .` includes both release files in the image.
 After deployment, compare `/health`'s `source_commit` with the expected tested SHA.
+
+
+## GitHub Actions CI
+
+`.github/workflows/ci.yml` runs on pushes to `main`, pull requests targeting `main`,
+and manual runs from the Actions tab. It uses Python 3.12, runs the unittest
+regressions, builds the Dockerfile, and tests a disposable container over HTTP.
+The smoke test covers release identity, the playground, Swagger/OpenAPI, dataset
+creation, stable pagination, CSV/JSON exports, invalid requests, and deletion.
+Container logs appear on failures, and the container is removed after the job.
+No deployment secrets or registry credentials are required. This workflow tests
+only; it does not deploy to SnapDeploy or promote a deployment branch.
+
+After pushing these files, open **Actions → CI** to see the run. Once a run exists,
+configure the `Test code and Docker build` status check as required in the branch
+rules for `main` if you want to block merging failing pull requests.
+
+Run the same checks locally (start a disposable API container before the last command):
+
+```text
+python -m unittest discover -v -p "test_*.py"
+docker build -t purchase-api:ci .
+docker run -d --name purchase-api-ci -p 127.0.0.1:18080:8000 purchase-api:ci
+python scripts/smoke_test.py --base-url http://127.0.0.1:18080
+docker rm -f purchase-api-ci
+```

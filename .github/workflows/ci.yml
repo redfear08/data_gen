@@ -1,0 +1,47 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  test-and-build:
+    name: Test code and Docker build
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@v6
+        with:
+          python-version: '3.12'
+          cache: pip
+      - name: Install dependencies
+        run: python -m pip install -r requirements.txt
+      - name: Check Python syntax
+        run: python -m compileall -q main.py data_generator.py test_memory_limits.py scripts
+      - name: Run regression tests
+        run: python -m unittest discover -v -p 'test_*.py'
+      - name: Build Docker image
+        run: docker build --tag purchase-api:ci .
+      - name: Run container
+        run: docker run --detach --name purchase-api-ci --publish 127.0.0.1:18080:8000 purchase-api:ci
+      - name: Test container API
+        run: python scripts/smoke_test.py --base-url http://127.0.0.1:18080
+      - name: Show container logs on failure
+        if: failure()
+        run: docker logs purchase-api-ci || true
+      - name: Remove test container
+        if: always()
+        run: docker rm --force purchase-api-ci || true
